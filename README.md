@@ -13,8 +13,7 @@ your virtual machine name for <VMName>):
 
 Then restart the VM (you shouldn't notice any change).
 
-Now you need to build/install git using the FreeBSD ports system.
-  https://www.digitalocean.com/community/tutorials/how-to-install-git-on-freebsd-11-0
+We need a working `git`... see the section below.
 
 Then clone the repository:
   git@github.com:wrigjl/cgcvmx.git
@@ -39,3 +38,30 @@ With the new kernel installed, go to where you cloned the hypervisor:
   kldload ./cgcvmx64.ko
 
 If things went well, you'll get a message about being in the matrix (without crashing).
+
+## Getting `git`
+
+Building git on this old version of FreeBSD isn't straightfoward. Here's what I did:
+
+```
+ftp http://ftp.gnu.org/gnu/make/make-4.4.tar.gz
+tar xzf make-4.4.tar.gz
+cd make-4.4
+./configure
+make
+su
+        # as root
+        make install
+        exit
+cd ..
+ftp http://mirrors.edge.kernel.org/pub/software/scm/git/git-2.44.0.tar.gz
+tar xzf git-2.44.0.tar.gz
+cd git-2.44.0
+./configure --without-tcltk
+/usr/local/bin/make
+su
+        # as root
+        make install
+        exit
+```
+
