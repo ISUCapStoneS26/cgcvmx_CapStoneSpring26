@@ -22,6 +22,7 @@
 #include <machine/cpu.h>
 #include <machine/specialreg.h>
 #include <machine/md_var.h>
+#include <dev/hyperv/vmbus/hyperv_machdep.h>
 
 #include "vmxon64.h"
 #include "vmx64.h"
@@ -1099,6 +1100,12 @@ void vmexitCallback(VmxStruct *vmx) {
          vmx->rdx = regs.edx;
          break;
       }
+      case VMEXIT_REASON_HLT:
+         //cgc_vmwrite(VMX_GUEST_ACTIVITY_STATE, 1);
+         break;
+      case VMEXIT_REASON_VMCALL:
+         vmx->rax = hypercall_md((void *)vm_read(VMX_GUEST_RIP), vmx->rbx, vmx->rdx, vmx->r8);
+         break;
       case VMEXIT_REASON_CR_ACCESS: {
          uint64_t reg = qual & 0xf;
          uint32_t type = (qual >> 4) & 3;
