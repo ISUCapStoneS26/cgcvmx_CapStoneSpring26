@@ -1,0 +1,8 @@
+@
+machine
+x86
+*.ko
+*.ko.debug
+*.ko.symbols
+*.o
+.depend
