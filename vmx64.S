@@ -1,208 +1,162 @@
-.intel_syntax noprefix
 
 /*
-   IMPORTANT NOTE
-   The default version of binutils installed in FreeBSD 10 is OLD
-   binutils needs to be installed from ports to get a version of
-   gas that fixes bugs in the intel_syntax parser/generator
-*/
-
-/*
-   NOTE: this version has been modified to be compatible with
-   clang
-*/
+ * This version is modified to use AT&T syntax
+ */
 
 .code64
 
-.global cgc_rdrand
-.global cgc_rdseed
-.global cgc_cpuid
-.global cr4_set
-.global cr4_reset
-.global vm_call
-.global vm_clear
-.global vm_ptrld
-.global vm_ptrst
-.global vmx_on
-.global vmx_off
-.global vm_write
-.global vm_read
-.global vm_launch
-.global vm_resume
-.global vmexit_handler
-.global RegGetTSC
-.global RegGetCs
-.global RegGetDs
-.global RegGetEs
-.global RegSetEs
-.global RegGetFs
-.global RegGetGs
-.global RegGetSs
-.global cgc_clts
-.global cgc_lmsw
-.global RegGetCr0
-.global RegSetCr0
-.global RegGetCr2
-.global RegSetCr2
-.global RegGetCr3
-.global RegSetCr3
-.global RegGetCr4
-.global RegSetCr4
-.global RegGetRflags
-.global RegGetRsp
-.global GetIdtBase
-.global GetIdtLimit
-.global GetGdtBase
-.global GetGdtLimit
-.global GetLdtr
-.global GetSegAttr
-.global GetTrAttr
-.global GetTrLimit
-.global GetLdtAttr
-.global GetTrSelector
-.global MsrRead
-.global MsrWrite
-.global init_tramp
-
-.global do_sldt
-.global do_sgdt
-.global do_sidt
-.global do_str
-
-.global do_lgdt
-.global do_lidt
-.global guest_rip
-.global fail_rip
-.text
-
 .extern vmexitCallback
 .extern real_cgcvmx_on
-.extern printf
+
+.macro ENTRY x
+	.text
+	.globl \x
+	.type \x,@function
+	.align 16, 0x90
+\x:
+.endm
+
+.macro END x
+	.size \x, .-\x
+.endm
 
 /*
 uint32_t vm_ptrld(uint64_t addr)
 */
-vm_ptrld:
-   push rdi
-   vmptrld [rsp]
-   pop rdi
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_ptrld
+	push %rdi
+	vmptrld (%rsp)
+	pop %rdi
+	pushfq
+	pop %rax
+	and $0x41, %eax /* CF | ZF */
+	ret
+END vm_ptrld
 
 /*
 uint32_t vm_ptrst(uint64_t addr)
 */
-vm_ptrst:
-   push rdi
-   vmptrst [rsp]
-   pop rdi
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_ptrst
+	push %rdi
+	vmptrst (%rsp)
+	pop %rdi
+	pushfq
+	pop %rax
+	and $0x41, %eax /* CF | ZF */
+	ret
+END vm_ptrst
 
 /*
 uint32_t vm_clear(uint64_t addr)
 */
-vm_clear:
-   push rdi
-   vmclear [rsp]
-   pop rdi
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_clear
+	push %rdi
+	vmclear (%rsp)
+	pop %rdi
+	pushfq
+	pop %rax
+	and $0x41, %eax /* CF | ZF */
+	ret
+END vm_clear
 
 /*
 uint64_t vm_read(uint64_t field)
 */
-vm_read:
-   vmread rax, rdi
-   ret
+ENTRY vm_read
+	vmread %rdi, %rax
+	ret
+END vm_read
 
 /*
 uint32_t vm_write(uint64_t field, uint64_t value)
 */
-vm_write:
-   vmwrite rdi, rsi
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_write
+	vmwrite %rsi, %rdi
+	pushfq
+	pop %rax
+	and $0x41, %eax /* CF | ZF */
+	ret
+END vm_write
 
 /*
 uint32_t vmx_off(void)
 */
-vmx_off:
-   vmxoff
-   pushfq
-   pop rax
-   and rax, 0x41   /* CF | ZF */
-   ret
+ENTRY vmx_off
+	vmxoff
+	pushfq
+	pop %rax
+	and $0x41, %rax		/* CF | ZF */
+	ret
+END vmx_off
 
 /*
 uint32_t vmx_on(uint64_t addr)
 */
-vmx_on:
-   push rdi
-   vmxon [rsp]
-   pop rdi
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vmx_on
+	push %rdi
+	vmxon (%rsp)
+	pop %rdi
+	pushfq
+	pop %rax
+	and $0x41, %eax		/* CF | ZF */
+	ret
+END vmx_on
 
 /*
 uint32_t vm_call(uint64_t func)
 */
-vm_call:
-   vmcall
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_call
+	vmcall
+	pushfq
+	pop %rax
+	and $0x41, %eax		/* CF | ZF */
+	ret
+END vm_call
 
 /*
 uint64_t get_cr4(void)
 */
-get_cr4:
-   mov rax, cr4
-   ret
+ENTRY get_cr4
+	mov %cr4, %rax
+	ret
+END get_cr4
 
 /*
 void cr4_set(uint64_t bits)
 */
-cr4_set:
-   mov rcx, cr4
-   or  rcx, rdi
-   mov cr4, rcx
-   ret
+ENTRY cr4_set
+	mov %cr4, %rcx
+	or %rdi, %rcx
+	mov %rcx, %cr4
+	ret
+END cr4_set
 
 /*
 void cr4_reset(uint64_t bits)
 */
-cr4_reset:
-   not rdi
-   mov rcx, cr4
-   and rcx, rdi
-   mov cr4, rcx
-   ret
+ENTRY cr4_reset
+	not %rdi
+	mov %cr4, %rcx
+	and %rdi, %rcx
+	mov %rcx, %cr4
+	ret
+END cr4_reset
 
-vm_launch:
-   vmlaunch
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_launch
+	vmlaunch
+	pushfq
+	pop %rax
+	and $0x41, %eax		/* CF | ZF */
+	ret
+END vm_launch
 
-vm_resume:
-   vmresume
-   pushfq
-   pop rax
-   and eax, 0x41   /* CF | ZF */
-   ret
+ENTRY vm_resume
+	vmresume
+	pushfq
+	pop %rax
+	and $0x41, %eax		/* CF | ZF */
+	ret
+END vm_resume
 
 /*
    vmexit_handler is specified as HOST_RIP in the VMCS. This is where all VMexits 
@@ -211,402 +165,442 @@ vm_resume:
    and HOST_RSP set (see setup of host stack in real_cgcvmx_on() in cgcvmx64.c)
    ultimately invokes vmexitCallback(VmxStruct *vmx) to handle the VMexit
 */
-vmexit_handler:
 /*
    on VM exit, gp regs still reflect guest values w/ exception of esp
    HOST_RSP points at beginning of CPU struct from VmxInitialize
 */
-   push rax
-   push rcx
-   push rdx
-   push rbx
-   sub  rsp, 8
-   push rbp
-   push rsi
-   push rdi
-   push r8
-   push r9 
-   push r10
-   push r11
-   push r12
-   push r13
-   push r14
-   push r15
+ENTRY vmexit_handler
+	push %rax
+	push %rcx
+	push %rdx
+	push %rbx
+	sub $8, %rsp
+	push %rbp
+	push %rsi
+	push %rdi
+	push %r8
+	push %r9 
+	push %r10
+	push %r11
+	push %r12
+	push %r13
+	push %r14
+	push %r15
 
-   mov rdi, rsp   /* VmxStruct* */
-   call  vmexitCallback
+	mov %rsp, %rdi		/* VmxStruct* */
+	call  vmexitCallback
 
-   pop r15
-   pop r14
-   pop r13
-   pop r12
-   pop r11
-   pop r10
-   pop r9
-   pop r8
-   pop rdi
-   pop rsi
-   pop rbp
-   add rsp, 8
-   pop rbx
-   pop rdx
-   pop rcx
-   pop rax
-   vmresume
-   ret
+	pop %r15
+	pop %r14
+	pop %r13
+	pop %r12
+	pop %r11
+	pop %r10
+	pop %r9
+	pop %r8
+	pop %rdi
+	pop %rsi
+	pop %rbp
+	add $8, %rsp
+	pop %rbx
+	pop %rdx
+	pop %rcx
+	pop %rax
+	vmresume
+	ret
+END vmexit_handler
 
 /*
 cgc_cpuid(CpuIdRegs *regs)
 */
-cgc_cpuid:
-    push rbx
-    
-    mov eax, [rdi]       /* regs->eax */
-    mov ecx, [rdi + 8]   /* regs->ecx */
+ENTRY cgc_cpuid
+	push %rbx
+	mov 0(%rdi),%eax	/* regs->eax */
+	mov 8(%rdi),%ecx	/* regs->ecx */
 
-    cpuid
+	cpuid
 
-    mov [rdi], eax
-    mov [rdi + 4], ebx    
-    mov [rdi + 8], ecx
-    mov [rdi + 12], edx
-    
-    pop rbx
-    ret
-/*
-uint8_t cgc_rdrand(uint64_t *rnd);
-*/
-cgc_rdrand:
-   rdrand rax
-   mov [rdi], rax
-   setc al
-   movzx eax, al
-   ret
+	mov %eax, 0x0(%rdi)
+	mov %ebx, 0x4(%rdi)
+	mov %ecx, 0x8(%rdi)
+	mov %edx, 0xc(%rdi)
+
+	pop %rbx
+	ret
+END cgc_cpuid
 
 /*
 uint8_t cgc_rdrand(uint64_t *rnd);
 */
-cgc_rdseed:
-   rdseed rax
-/*   .byte 0x48, 0x0f, 0xc7, 0xf8    rdseed rax */
-   mov [rdi], rax
-   setc al
-   movzx eax, al
-   ret
+ENTRY cgc_rdrand
+	rdrand %rax
+	mov %rax,(%rdi)
+	setb %al
+	movzbl %al,%eax
+	ret
+END cgc_rdrand
 
-RegGetTSC:
-   rdtsc
-   shl rdx, 32
-   or rax, rdx
-   ret
+/*
+uint8_t cgc_rdseed(uint64_t *rnd);
+*/
+ENTRY cgc_rdseed
+	rdseed %rax
+	mov %rax,(%rdi)
+	setb %al
+	movzbl %al,%eax
+	ret
+END cgc_rdseed
 
-RegGetCs:
-   mov ax, cs
-   movzx rax, ax
-   ret
+ENTRY RegGetTSC
+	rdtsc
+	shlq $32, %rdx
+	orq %rdx, %rax
+	ret
+END RegGetTSC
 
-RegGetDs:
-   mov ax, ds
-   movzx rax, ax
-   ret
+ENTRY RegGetCs
+	movw %cs, %ax
+	movzwq %ax, %rax
+	ret
+END RegGetCs
 
-RegGetEs:
-   mov ax, es
-   movzx rax, ax
-   ret
+ENTRY RegGetDs
+	movw %ds, %ax
+	movzwq %ax, %rax
+	ret
+END RegGetDs
 
-RegSetEs:
-   mov es, di
-   ret
+ENTRY RegGetEs
+	movw %es, %ax
+	movzwq %ax, %rax
+	ret
+END RegGetEs
 
-RegGetSs:
-   mov ax, ss
-   movzx rax, ax
-   ret
+ENTRY RegSetEs
+	movw %di, %es
+	ret
+END RegSetEs
 
-RegGetFs:
-   mov ax, fs
-   movzx rax, ax
-   ret
+ENTRY RegGetSs
+	movw %ss, %ax
+	movzwq %ax, %rax
+	ret
+END RegGetSs
 
-RegGetGs:
-   mov ax, gs
-   movzx rax, ax
-   ret
+ENTRY RegGetFs
+	movw %fs, %ax
+	movzwq %ax, %rax
+	ret
+END RegGetFs
 
-RegGetCr0:
-   mov  rax, cr0
-   ret
+ENTRY RegGetGs
+	movw %gs, %ax
+	movzwq %ax, %rax
+	ret
+END RegGetGs
+
+ENTRY RegGetCr0
+	mov %cr0, %rax
+	ret
+END RegGetCr0
 
 /*
 void RegSetCr0(uint64_t _cr0)
 */
-RegSetCr0:
-   mov  cr0, rdi
-   ret
+ENTRY RegSetCr0
+	mov %rdi, %cr0
+	ret
+END RegSetCr0
 
 /*
 void cgc_clts();
 */
-cgc_clts:
-   clts
-   ret
+ENTRY cgc_clts
+	clts
+	ret
+END cgc_clts
    
 /*
 void cgc_lmsw(uint64_t lmsw);
 */
-cgc_lmsw:
-   lmsw di
-   ret
+ENTRY cgc_lmsw
+	lmsw %di
+	ret
+END cgc_lmsw
 
-RegGetCr2:
-   mov  rax, cr2
-   ret
+ENTRY RegGetCr2
+	mov %cr2, %rax
+	ret
+END RegGetCr2
 
-RegSetCr2:
-   mov  cr2, rdi
-   ret
+ENTRY RegSetCr2
+	mov %rdi, %cr2
+	ret
+END RegSetCr2
 
-RegGetCr3:
-   mov  rax, cr3
-   ret
+ENTRY RegGetCr3
+	mov %cr3, %rax
+	ret
+END RegGetCr3
 
 /*
 void RegSetCr3(uint64_t _cr3)
 */
-RegSetCr3:
-   mov  cr3, rdi
-   ret
+ENTRY RegSetCr3
+	mov %rdi, %cr3
+	ret
+END RegSetCr3
 
-RegGetCr4:
-   mov  rax, cr4
-   ret
+ENTRY RegGetCr4
+   	mov %cr4, %rax
+	ret
+END RegGetCr4
 
 /*
 void RegSetCr4(uint64_t _cr4)
 */
-RegSetCr4:
-   mov  cr4, rdi
-   ret
+ENTRY RegSetCr4
+	mov %rdi, %cr4
+	ret
+END RegSetCr4
 
-RegGetRflags:
-   pushfq
-   pop  rax
-   ret
+ENTRY RegGetRflags
+	pushfq
+	pop %rax
+	ret
+END RegGetRflags
 
-RegGetRsp:
-   lea  rax, [rsp + 8]
-   ret
+ENTRY RegGetRsp
+	lea 0x8(%rsp),%rax
+	ret
+END RegGetRsp
+
 
 /*
 void do_sidt(uint8_t *idt)
 */
-do_sidt:
-   sidt [rdi]
-   ret
+ENTRY do_sidt
+	sidt	(%rdi)
+	ret
+END do_sidt
 
 /*
 void do_lidt(uint8_t *idt)
 */
-do_lidt:
-   lidt [rdi]
-   ret
+ENTRY do_lidt
+	lidt (%rdi)
+	ret
+END do_lidt
 
 /*
 void do_sgdt(uint8_t *gdt)
 */
-do_sgdt:
-   sgdt [rdi]
-   ret
+ENTRY do_sgdt
+	sgdt (%rdi)
+	ret
+END do_sgdt
 
 /*
 void do_lgdt(uint8_t *gdt)
 */
-do_lgdt:
-   lgdt [rdi]
-   ret
+ENTRY do_lgdt
+	lgdt (%rdi)
+	ret
+END do_lgdt
 
-GetIdtBase:
-   sub  rsp, 16
-   sidt [rsp]
-   mov  rax, [rsp + 2]
-   add  rsp, 16
-   ret
+ENTRY GetIdtBase
+	subq $16, %rsp
+   	sidt (%rsp)
+	mov 0x2(%rsp), %rax
+	addq $16, %rsp
+	ret
+END GetIdtBase
 
-GetIdtLimit:
-   sub  rsp, 16   
-   sidt [rsp]
-   /* movzx  rax, word [rsp] */
-   .byte 0x48, 0x0f, 0xb7, 0x04, 0x24
-   add  rsp, 16
-   ret
+ENTRY GetIdtLimit
+	subq $0x10, %rsp
+	sidt (%rsp)
+	movzwq (%rsp), %rax
+	addq $16, %rsp
+	ret
+END GetIdtLimit
 
-GetGdtBase:
-   sub  rsp, 16
-   sgdt [rsp]
-   mov  rax, [rsp + 2]
-   add  rsp, 16
-   ret
+ENTRY GetGdtBase
+	subq $0x10, %rsp
+	sgdt (%rsp)
+	movq 0x2(%rsp),%rax
+	addq $16, %rsp
+	ret
+END GetGdtBase
 
-GetGdtLimit:
-   sub  rsp, 16
-   sgdt [rsp]
-   /* movzx  rax, word [rsp] */
-   .byte 0x48, 0x0f, 0xb7, 0x04, 0x24
-   add  rsp, 16
-   ret
+ENTRY GetGdtLimit
+	subq $0x10, %rsp
+	sgdt (%rsp)
+	movzwq (%rsp), %rax
+	addq $16, %rsp
+	ret
+END GetGdtLimit
 
 /*
 uint16_t do_sldt()
 */
-do_sldt:
-GetLdtr:
-   sldt  ax
-   movzx rax, ax
-   ret
+ENTRY do_sldt
+ENTRY GetLdtr
+	sldt %ax
+	movzwq %ax, %rax
+	ret
+END do_sldt
+END GetLdtr
 
 /*
 void do_lldt(uint16_t ldt)
 */
-do_lldt:
-   lldt  di
-   ret
+ENTRY do_lldt
+	lldt %di
+	ret
+END do_lldt
 
 /*
 uint16_t do_str()
 */
-do_str:
-GetTrSelector:
-   str   ax
-   movzx rax, ax
-   ret
+ENTRY do_str
+ENTRY GetTrSelector
+	str %ax
+	movzwq %ax, %rax
+   	ret
+END do_str
+END GetTrSelector
 
 /*
 void do_ltr(uint16_t tr)
 */
-do_ltr:
-   ltr di
-   ret
+ENTRY do_ltr
+	ltr %di
+	ret
+END do_ltr
 
-GetTrLimit:
-   str   ax
-   movzx rax, ax
-   /* lsl   rax, eax */
-   .byte 0x48, 0x0f, 0x03, 0xc0   
-   ret
+ENTRY GetTrLimit
+	str %ax
+	movzwq %ax, %rax
+	lsl %rax, %rax
+	ret
+END GetTrLimit
+ 
+ENTRY GetTrAttr
+	str   %ax
+	movzwq %ax, %rax
+	lar %eax, %rax
+	ret
+END GetTrAttr
 
-GetTrAttr:
-   str   ax
-   movzx rax, ax
-   lar   rax, eax
-   ret
+ENTRY GetLdtAttr
+	sldt %ax
+	movzwq %ax, %rax
+	lar %eax, %rax
+	ret
+END GetLdtAttr
 
-GetLdtAttr:
-   sldt  ax
-   movzx rax, ax
-   lar   rax, eax
-   ret
-
-GetSegAttr:
-   lar   rax, eax
-   ret
+ENTRY GetSegAttr
+	lar   %eax, %rax
+	ret
+END GetSegAttr
 
 /*
 uint64_t MsrRead(uint32_t reg);
 */
-MsrRead:
-   mov  rcx, rdi
-   /* per ref manual, rdmsr clears high order bits of rdx and rax here */
-   rdmsr    /* MSR[rcx] --> edx:eax */
-   /* combine into single 64 bit result */
-   shl  rdx, 32
-   or   rax, rdx
-   ret
+ENTRY MsrRead
+	mov  %rdi, %rcx
+	/* per ref manual, rdmsr clears high order bits of rdx and rax here */
+	rdmsr    /* MSR[rcx] --> edx:eax */
+	/* combine into single 64 bit result */
+	shlq  $32, %rdx
+	orq   %rdx, %rax
+	ret
+END MsrRead
 
 /*
 void MsrWrite(uint32_t reg, uint64_t val);
 */
-MsrWrite:
-   mov  ecx, edi
-   /* split rsi across edx:eax */
-   mov  rdx, rsi
-   shr  rdx, 32
-   mov  eax, esi
-   wrmsr    /* MSR[ecx] <- edx:eax */
-   ret
+ENTRY MsrWrite
+	movl %edi, %ecx
+	/* split rsi across edx:eax */
+   	movq %rsi, %rdx
+	shrq  $32, %rdx
+	movl %esi, %eax
+	wrmsr		/* MSR[ecx] <- edx:eax */
+	ret
+END MsrWrite
+
 
 /*
    init_tramp computes the correct values for GUEST_RIP and GUEST_RSP
    to be specified in the VMCS prior to issuing vmlaunch. The virtualized
    guest will end up reentering at guest_rip below
 */
-init_tramp:
-   push rax
-   push rcx
-   push rdx
-   push rbx
+ENTRY init_tramp
+	push %rax
+	push %rcx
+	push %rdx
+	push %rbx
 /*   push rsp */
-   push rbp
-   push rsi
-   push rdi
-   push r8
-   push r9 
-   push r10
-   push r11
-   push r12
-   push r13
-   push r14
-   push r15
+	push %rbp
+	push %rsi
+	push %rdi
+	push %r8
+	push %r9 
+	push %r10
+	push %r11
+	push %r12
+	push %r13
+	push %r14
+	push %r15
    
-   mov  edx, edi           /* cpu number */
-   mov  rsi, rsp           /* guest rsp, positioned to ret from here */   
-   lea  rdi, [guest_rip]
+	movl  %edi, %edx	/* cpu number */
+	movq %rsp, %rsi		/* guest rsp, positioned to ret from here */   
+	lea  guest_rip, %rdi
    
-   call real_cgcvmx_on
+	call real_cgcvmx_on
 
 	/*** only get here if init failed ***/
-fail_rip:	
-   pop r15
-   pop r14
-   pop r13
-   pop r12
-   pop r11
-   pop r10
-   pop r9
-   pop r8
-   pop rdi
-   pop rsi
-   pop rbp
+fail_rip:
+	pop %r15
+	pop %r14
+	pop %r13
+	pop %r12
+	pop %r11
+	pop %r10
+	pop %r9
+	pop %r8
+	pop %rdi
+	pop %rsi
+	pop %rbp
 /*   pop rsp  */
-   pop rbx
-   pop rdx
-   pop rcx
-   pop rax
-   mov ax, 0xffff
-   movsx rax, ax
-   ret
+	pop %rbx
+	pop %rdx
+	pop %rcx
+	pop %rax
+	mov $0xffff,%ax
+	movswq %ax,%rax
+	ret
    
 guest_rip:
-/*if we get here, guest vmlaunch was successful*/
+	/*if we get here, guest vmlaunch was successful*/
 
-   pop r15
-   pop r14
-   pop r13
-   pop r12
-   pop r11
-   pop r10
-   pop r9
-   pop r8
-   pop rdi
-   pop rsi
-   pop rbp
+	pop %r15
+	pop %r14
+	pop %r13
+	pop %r12
+	pop %r11
+	pop %r10
+	pop %r9
+	pop %r8
+	pop %rdi
+	pop %rsi
+	pop %rbp
 /*   pop rsp  */
-   pop rbx
-   pop rdx
-   pop rcx
-   pop rax
-   xor rax, rax
-   ret
-
-.att_syntax
-
+	pop %rbx
+	pop %rdx
+	pop %rcx
+	pop %rax
+	xorq %rax, %rax
+	ret
+END init_tramp
