@@ -64,7 +64,7 @@ static uint32_t makeValidAccessRights(uint32_t sel) {
       access = ATTR_UNUSABLE;
    }
    else if ((access & ATTR_TYPE_ACCESSED) == 0) {
-      printf("<cgcvmx> selector 0x%x appears to be in use, but the ACCESSED but is not set\n", sel);
+      printf("<cgcvmx> selector 0x%x appears to be in use, but the ACCESSED bit is not set\n", sel);
 //      access |= ATTR_TYPE_ACCESSED;   //required by guest state checks (see Vol 3, 26.3.1.2)
    }
    return access;
