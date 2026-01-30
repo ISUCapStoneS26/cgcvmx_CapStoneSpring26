@@ -33,7 +33,7 @@ definition for `pmap_pte` in the "Inline Functions" section. It needs to look li
 be callable and it won't be if it is "inline").
 
 The next thing file that needs to be patched is the pmap.h file in `/sys/amd64/include/pmap.h`.
-At the bottmom of the file, right before the #endif section, add this function definition:
+At the bottom of the file, right before the #endif section, add this function definition:
 ```c
   pt_entry_t *pmap_pte(pmap_t pmap, vm_offset_t va);
 ```
