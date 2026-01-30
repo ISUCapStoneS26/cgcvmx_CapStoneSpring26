@@ -21,22 +21,29 @@ We need a working `git`... see the section below.
 Then clone the repository:
   `git@github.com:wrigjl/cgcvmx.git`
 
-You need to patch the FreeBSD source code slightly. In `/sys/amd64`, there's a function
-definition for `pmap_pte`. It needs to look like this:
+You need to patch the FreeBSD source code slightly. In `/sys/amd64/amd64/pmap.c`, there's a function
+definition for `pmap_pte` in the "Inline Functions" section. It needs to look like this:
 
 ```c
-  pt_entry *pmap_pte(pmap_t pmap, vm_offset_t va);
+ pt_entry_t *
+ pmap_pte(pmap_t pmap, vm_offset_t va)
 ```
 
-(I.e. remove the inline definition parts... Our hypervisor needs this function to
+(I.e. remove the inline and static definition parts, and change "pt_entry" -> "pt_entry_t... Our hypervisor needs this function to
 be callable and it won't be if it is "inline").
 
-Now rebuild and install the kernel:
+The next thing file that needs to be patched is the pmap.h file in `/sys/amd64/include/pmap.h`.
+At the bottmom of the file, right before the #endif section, add this function definition:
+```c
+  pt_entry_t *pmap_pte(pmap_t pmap, vm_offset_t va);
+```
+
+Now rebuild and install the kernel, the "/usr/src/" helps establish a complete source tree path:
 
 ```sh
-cd /sys/amd64/conf
+cd /usr/src/sys/amd64/conf
 config GENERIC
-cd ../compile/GENERIC
+cd /usr/src/sys/amd64/compile/GENERIC
 make && make install && reboot
 ```
 
