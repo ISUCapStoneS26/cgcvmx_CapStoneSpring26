@@ -19,7 +19,7 @@ Then restart the VM (you shouldn't notice any change).
 We need a working `git`... see the section below.
 
 Then clone the repository:
-  `git@github.com:wrigjl/cgcvmx.git`
+  `git@github.com:ISUCapStoneS26/cgcvmx_CapStoneSpring26.git`
 
 You need to patch the FreeBSD source code slightly. In `/sys/amd64/amd64/pmap.c`, there's a function
 definition for `pmap_pte` in the "Inline Functions" section. It needs to look like this:
