@@ -481,7 +481,7 @@ END do_ltr
 ENTRY GetTrLimit
 	str %ax
 	movzwq %ax, %rax
-	lsl %eax, %rax
+	lsll %eax, %eax
 	ret
 END GetTrLimit
  
