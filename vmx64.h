@@ -72,8 +72,8 @@ uint32_t GetSegAttr(uint16_t);
 
 void do_sidt(uint8_t *idt);
 void do_sgdt(uint8_t *gdt);
-uint16_t do_sldt();
-uint16_t do_str();
+uint16_t do_sldt(void);
+uint16_t do_str(void);
 
 void do_lidt(uint8_t *idt);
 void do_lgdt(uint8_t *gdt);
