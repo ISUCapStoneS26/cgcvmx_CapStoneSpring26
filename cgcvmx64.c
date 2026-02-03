@@ -22,7 +22,7 @@
 #include <machine/cpu.h>
 #include <machine/specialreg.h>
 #include <machine/md_var.h>
-#include <dev/hyperv/vmbus/hyperv_machdep.h>
+#include <dev/hyperv/vmbus/x86/hyperv_machdep.h>
 
 #include "vmxon64.h"
 #include "vmx64.h"
@@ -422,7 +422,7 @@ static int cgcvmx_handle_gdt_idt(struct proc *p, VmxStruct *vmx) {
 }
 
 static int cgcvmx_handle_ldt_tr(struct proc *p, VmxStruct *vmx) {
-   uintptr_t iinfo, base, limit, arb, r, offset, x_iinfo, x_exitq;
+   uintptr_t iinfo, base, limit, arb, r, offset; //, x_iinfo, x_exitq;
    uint16_t usel, cs, seg;
    struct {
       uintptr_t seg1;
@@ -456,13 +456,15 @@ static int cgcvmx_handle_ldt_tr(struct proc *p, VmxStruct *vmx) {
     * 29:28 instruction
     *     0 sldt, 1 str, 2 lldt, 3 ltr
     */
-   x_iinfo = iinfo = vm_read(VMX_INSTR_INFO);
+   //x_iinfo = iinfo = vm_read(VMX_INSTR_INFO);
+   iinfo = vm_read(VMX_INSTR_INFO);
 
    if ((iinfo & (1 << 10)) == 0) {
       /* memory: offset = disp + base + (index * scale) */
 
       /* disp */
-      x_exitq = offset = vm_read(VMX_EXIT_QUALIFICATION);
+      //x_exitq = offset = vm_read(VMX_EXIT_QUALIFICATION);
+      offset = vm_read(VMX_EXIT_QUALIFICATION);
 
       /* base */
       if ((iinfo & (1 << 27)) == 0) {
@@ -982,7 +984,7 @@ static int (*do_io[64])(VmxStruct *vmx, uint16_t port) = {
 
 static int
 cgcvmx_handle_io(struct proc *p, VmxStruct *vmx) {
-   uintptr_t iinfo, qual;
+   uintptr_t qual; //iinfo, qual;
    uint16_t dx, cs;
    int idx;
    
@@ -1007,7 +1009,7 @@ cgcvmx_handle_io(struct proc *p, VmxStruct *vmx) {
       factor in address size field (9:7) from 
       VMX_INSTR_INFO field to choose rcx/ecx/cx
       as appropriate */
-   iinfo = vm_read(VMX_INSTR_INFO);
+   //iinfo = vm_read(VMX_INSTR_INFO);
    qual = vm_read(VMX_EXIT_QUALIFICATION);
    
    dx = (qual >> 16) & 0xffff;
@@ -1286,7 +1288,7 @@ static void setup_control_16(void) {
 }
 
 static void
-cgc_pmcmsr_config() {
+cgc_pmcmsr_config(void) {
    CpuIdRegs regs;
    int i;
 
@@ -2161,11 +2163,13 @@ static void virtualizeProc(void *arg) {
    //do we need to acquire/release sched_lock mutex around call to sched_bind ???
    struct thread *td;
    
+   int cpu = (int) ((intptr_t) arg) & 0xFFFFFFFF;
+
    td = curthread;
    thread_lock(td);
-   sched_bind(td, (int)arg); //bind thread to cpu before virtualizing
+   sched_bind(td, cpu); //bind thread to cpu before virtualizing
    thread_unlock(td);
-   if (init_tramp((int)arg))
+   if (init_tramp(cpu))
       printf("<cgcvmx> vmlaunch failed\n");
    else
       printf("<cgcvmx> made it back to cgcvmx_on, we are in the matrix if we don't crash\n");
