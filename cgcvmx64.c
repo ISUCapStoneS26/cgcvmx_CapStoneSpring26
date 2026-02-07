@@ -19,6 +19,9 @@
 #include <vm/pmap.h>
 #include <vm/vm_map.h>
 
+#include <sys/stdint.h>
+#include <machine/cpufunc.h>   // rdmsr_safe()
+
 #include <machine/cpu.h>
 #include <machine/specialreg.h>
 #include <machine/md_var.h>
@@ -26,9 +29,85 @@
 
 #include "vmxon64.h"
 #include "vmx64.h"
+#include <sys/libkern.h>   // memcpy, strcmp in kernel
 
 #define CGCOS_PERS 0x41
 #define CGCOS_SYS_MAXSYSCALL 8
+
+static int cgcvmx_started = 0;
+
+static int
+cgc_msr_read(uint32_t msr, uint64_t *out)
+{
+    if (rdmsr_safe(msr, out) != 0) {
+        printf("<cgcvmx> rdmsr_safe(0x%x) failed\n", msr);
+        return (ENXIO);
+    }
+    return (0);
+}
+
+static __inline void
+cgc_cpuid_count(uint32_t leaf, uint32_t subleaf,
+    uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d)
+{
+    __asm __volatile("cpuid"
+        : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d)
+        : "a"(leaf), "c"(subleaf));
+}
+
+static int
+hypervisor_present(void)
+{
+    u_int regs[4];
+
+    /* leaf 1 -> regs[2] is ECX */
+    cpuid_count(1, 0, regs);
+    return ((regs[2] & (1U << 31)) != 0);
+}
+
+
+
+
+
+
+
+static int
+hypervisor_is_hyperv(void)
+{
+    u_int regs[4];
+    char vendor[13];
+
+    cpuid_count(0x40000000U, 0, regs);
+
+    /* regs: [0]=EAX, [1]=EBX, [2]=ECX, [3]=EDX */
+    memcpy(&vendor[0],  &regs[1], 4);     /* EBX */
+    memcpy(&vendor[4],  &regs[2], 4);     /* ECX */
+    memcpy(&vendor[8],  &regs[3], 4);     /* EDX */
+    vendor[12] = '\0';
+
+
+
+
+    return (strcmp(vendor, "Microsoft Hv") == 0);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 static MALLOC_DEFINE(M_VMXON, "vmxon data", "vmxon Data");
 static MALLOC_DEFINE(M_VMCS_GUEST, "vmcs data", "vmcs Data");
@@ -365,7 +444,7 @@ static int cgcvmx_handle_gdt_idt(struct proc *p, VmxStruct *vmx) {
          dtr.base &= 0xffffff;
       }
 
-      if ((cs & 3) == 3) {
+      if ((cs & 3) == 3 && PROC_IS_CGC(p)) {   
          if (cgcvmx_copyout(p, vmx, seg, offset, &dtr, sizeof(dtr))) {
             return (-1);
          }
@@ -1551,13 +1630,43 @@ static void setup_control_64(VmxStruct *vmx) {
       cgc_vmwrite(VMX_EOI_EXIT3_BITMAP_FULL, 0);
    }
 
-   if (one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS,
-			   CPU_BASED_ACTIVATE_SECONDARY) &&
-       one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS2,
-			   CPU2_BASED_ENABLE_VMFUNC) &&
-       (MsrRead(MSR_IA32_VMX_VMFUNC) & VMX_VMFUNC_EPTP_SWITCH)) {
-      cgc_vmwrite(VMX_EPTP_LIST_FULL, 0);
-   }
+    uint64_t vmfunc;
+
+    if (one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS,
+                            CPU_BASED_ACTIVATE_SECONDARY) &&
+        one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS2,
+                            CPU2_BASED_ENABLE_VMFUNC)) {
+
+        if (cgc_msr_read(MSR_IA32_VMX_VMFUNC, &vmfunc) != 0) {
+            printf("<cgcvmx> VMFUNC MSR read failed; skipping EPTP-switch setup\n");
+            return;
+        }
+
+        if (vmfunc & VMX_VMFUNC_EPTP_SWITCH) {
+            cgc_vmwrite(VMX_EPTP_LIST_FULL, 0);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
    
    if (one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS2,
 			   CPU2_BASED_VMCS_SHADOW)) {
@@ -1587,7 +1696,15 @@ static void setup_control_natural(void) {
    cgc_vmwrite(VMX_CR4_MASK, 0xffffffffffd89800);
    cgc_vmwrite(VMX_CR4_READ_SHADOW, 0);
    
-   n = VMX_MISC_CR3_TARGETS(MsrRead(MSR_IA32_VMX_MISC));
+    uint64_t misc;
+
+    if (cgc_msr_read(MSR_IA32_VMX_MISC, &misc) != 0) {
+        printf("<cgcvmx> VMX_MISC MSR read failed; cannot set CR3 target count\n");
+        return;
+    }
+
+    n = VMX_MISC_CR3_TARGETS(misc);
+
    for (i = 0; i < n; i++)
       cgc_vmwrite(VMX_CR3_TARGET_0 + (i * 2), 0);
 }
@@ -2012,22 +2129,36 @@ static void procVmxOff(void *arg) {
    kthread_exit();
 }
 
-static void cgcvmx_off(void) {
-   //need clean way to do this acros all processors
-   //can loop and vmxoff each one?
-   //no global state shared across all CPUs
-   //need to deallocate vmx across all CPUs
-   int procNum;
-   CPU_FOREACH (procNum) {
-      int tres;
-      struct thread *kthread;
-      tres = kthread_add(procVmxOff, (void*)threadVmx[procNum], NULL, &kthread, RFSTOPPED, 0, "vmxoff.%u", procNum);
-      if (tres != 0) {
-         printf("<cgcvmx> Failed to bind thread to CPU %d\n", procNum);
-         //need a graceful way to abort here
-      }
-   }
+static void
+cgcvmx_off(void)
+{
+    int procNum;
+
+    if (threadVmx == NULL) {
+        printf("<cgcvmx> cgcvmx_off(): threadVmx is NULL; nothing to do\n");
+        return;
+    }
+
+    CPU_FOREACH(procNum) {
+        int tres;
+        struct thread *kthread;
+
+        if (threadVmx[procNum] == NULL) {
+            /* This CPU was never initialized */
+            continue;
+        }
+
+        tres = kthread_add(procVmxOff, (void*)threadVmx[procNum],
+                           NULL, &kthread, RFSTOPPED, 0,
+                           "vmxoff.%u", procNum);
+
+        if (tres != 0) {
+            printf("<cgcvmx> Failed to create vmxoff thread for CPU %d (err=%d)\n",
+                   procNum, tres);
+        }
+    }
 }
+
 
 int real_cgcvmx_on(uint64_t guestRip, uint64_t guestRsp, uint32_t procNum) {
    uint32_t msr3a_value = 0;
@@ -2051,28 +2182,87 @@ int real_cgcvmx_on(uint64_t guestRip, uint64_t guestRsp, uint32_t procNum) {
       goto success;
    }
 
-   msr3a_value = (uint32_t)MsrRead(MSR_IA32_FEATURE_CONTROL);
+   uint64_t tmp64;
+
+/* Read IA32_FEATURE_CONTROL safely */
+   if (rdmsr_safe(MSR_IA32_FEATURE_CONTROL, &tmp64) != 0) {
+       printf("<cgcvmx> rdmsr_safe(MSR_IA32_FEATURE_CONTROL/0x%x) failed; refusing init\n",
+           (unsigned)MSR_IA32_FEATURE_CONTROL);
+       return (ENXIO);
+   }
+   msr3a_value = (uint32_t)tmp64;
+
    switch (msr3a_value & 5) {
-      case 0:
-         printf("<cgcvmx> MSR 0x3A: VMXON bit is off, Lock bit is not on. Enabling and locking MSR\n");
-         MsrWrite(MSR_IA32_FEATURE_CONTROL, msr3a_value | 4);
-         msr3a_value = (uint32_t)MsrRead(MSR_IA32_FEATURE_CONTROL);
-         MsrWrite(MSR_IA32_FEATURE_CONTROL, msr3a_value | 1);
-         break;
-      case 1:
-         printf("<cgcvmx> MSR 0x3A: Lock bit is on. VMXON bit is off. Cannot do vmxon\n");
-         goto success;
-      case 4:
-         printf("<cgcvmx> MSR 0x3A: VMXON bit is on, Lock bit is not on. Locking MSR\n");
-         MsrWrite(MSR_IA32_FEATURE_CONTROL, msr3a_value | 1);
-         break;
-      case 5:
-         printf("<cgcvmx> MSR 0x3A: Lock bit is on. VMXON bit is on. OK\n");
-         break;
+   case 0:
+       printf("<cgcvmx> MSR 0x3A: VMXON bit is off, Lock bit is not on. Enabling and locking MSR\n");
+
+       /* Enable VMXON (bit 2) */
+       if (wrmsr_safe(MSR_IA32_FEATURE_CONTROL, (uint64_t)(msr3a_value | 4)) != 0) {
+           printf("<cgcvmx> wrmsr_safe(MSR_IA32_FEATURE_CONTROL) failed; refusing init\n");
+           return (ENXIO);
+       }
+
+       /* Re-read after write */
+       if (rdmsr_safe(MSR_IA32_FEATURE_CONTROL, &tmp64) != 0) {
+           printf("<cgcvmx> rdmsr_safe(MSR_IA32_FEATURE_CONTROL) failed after write; refusing init\n");
+           return (ENXIO);
+       }
+       msr3a_value = (uint32_t)tmp64;
+
+       /* Lock (bit 0) */
+       if (wrmsr_safe(MSR_IA32_FEATURE_CONTROL, (uint64_t)(msr3a_value | 1)) != 0) {
+           printf("<cgcvmx> wrmsr_safe(MSR_IA32_FEATURE_CONTROL lock) failed; refusing init\n");
+           return (ENXIO);
+       }
+       break;
+
+   case 1:
+       printf("<cgcvmx> MSR 0x3A: Lock bit is on. VMXON bit is off. Cannot do vmxon\n");
+       goto success;
+
+   case 4:
+       printf("<cgcvmx> MSR 0x3A: VMXON bit is on, Lock bit is not on. Locking MSR\n");
+       if (wrmsr_safe(MSR_IA32_FEATURE_CONTROL, (uint64_t)(msr3a_value | 1)) != 0) {
+           printf("<cgcvmx> wrmsr_safe(MSR_IA32_FEATURE_CONTROL lock) failed; refusing init\n");
+           return (ENXIO);
+       }
+       break;
+
+   case 5:
+       printf("<cgcvmx> MSR 0x3A: Lock bit is on. VMXON bit is on. OK\n");
+       break;
    }
 
-   res = (uint32_t)MsrRead(MSR_IA32_EFER);
+   /* Read IA32_EFER safely */
+   if (rdmsr_safe(MSR_IA32_EFER, &tmp64) != 0) {
+       printf("<cgcvmx> rdmsr_safe(MSR_IA32_EFER/0x%x) failed; refusing init\n",
+           (unsigned)MSR_IA32_EFER);
+       return (ENXIO);
+   }
+   res = (uint32_t)tmp64;
    printf("<cgcvmx> MSR_IA32_EFER - 0x%x\n", res);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
    hostStack = malloc(STACK_PAGES * PAGE_SIZE, M_HOSTSTACK, M_WAITOK|M_ZERO);
    if (hostStack == NULL) {
@@ -2097,7 +2287,15 @@ int real_cgcvmx_on(uint64_t guestRip, uint64_t guestRsp, uint32_t procNum) {
    }
    printf("<cgcvmx> allocated vmxon region for cpu %u at %p\n", procNum, vmx->vmxon_region);
 
-   vmx_rev_id = (uint32_t)MsrRead(MSR_IA32_VMX_BASIC);
+
+
+   if (rdmsr_safe(MSR_IA32_VMX_BASIC, &tmp64) != 0) {
+       printf("<cgcvmx> rdmsr_safe(MSR_IA32_VMX_BASIC/0x%x) failed; refusing init\n",
+           (unsigned)MSR_IA32_VMX_BASIC);
+       return (ENXIO);
+   }
+   vmx_rev_id = (uint32_t)tmp64;
+
 
    memcpy(vmx->vmxon_region, &vmx_rev_id, 4); //copy revision id to vmxon region
 
@@ -2157,69 +2355,136 @@ memfail:
 }
 
 //arg is cpu
+
 static void virtualizeProc(void *arg) {
-   //do we need to acquire/release sched_lock mutex around call to sched_bind ???
    struct thread *td;
-   
-   td = curthread;
+
+   td = curthread;                 // <-- REQUIRED
    thread_lock(td);
-   sched_bind(td, (int)arg); //bind thread to cpu before virtualizing
+   sched_bind(td, (int)(uintptr_t)arg);  // safer cast
    thread_unlock(td);
-   if (init_tramp((int)arg))
+
+   if (init_tramp((int)(uintptr_t)arg))
       printf("<cgcvmx> vmlaunch failed\n");
    else
       printf("<cgcvmx> made it back to cgcvmx_on, we are in the matrix if we don't crash\n");
+
    kthread_exit();
 }
 
-static int cgcvmx_on(void) {
-   uint64_t procNum;
+static int
+cgcvmx_on(void)
+{
+    uint64_t procNum;
+    int any_fail = 0;
 
-   /* all MSR access defaults to generating vmexit */
-   if (one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS,
-			   CPU_BASED_ACTIVATE_MSR_BITMAP)) {
-      msr_bitmap_region = malloc(PAGE_SIZE, M_VMCS_MSR, M_WAITOK);
-      memset(msr_bitmap_region, -1, PAGE_SIZE);
-   }
-   
-   cgc_pmcmsr_config();
-   cgc_mcamsr_config();
-   cgc_miscmsr_config();
+    printf("<cgcvmx> cgcvmx_on(): entered\n");
+    printf("<cgcvmx> checking MSR bitmap capability\n");
 
-   threadVmx = (VmxStruct**)malloc(sizeof(VmxStruct*) * MAXCPU, M_VMXARRAY, M_ZERO | M_WAITOK);
-   //use kthreads to setup vmcs for each core and vmlaunch
-   //otherwise vmlaunch will never return when used on first core
-   //also need to pin threads to specific cores to make sure we vmxon and vmlaunch
-   //across all available cores
-   CPU_FOREACH (procNum) {
-      int tres;
-      struct thread *kthread;
-      printf("<cgcvmx> virtualizing processor #%p\n", (void*)procNum);
-      tres = kthread_add(virtualizeProc, (void*)procNum, NULL, &kthread, 0, 0, "vmx.%u", (uint32_t)procNum);
-      if (tres != 0) {
-         printf("<cgcvmx> Failed to bind thread to CPU %p\n", (void*)procNum);
-         //need a graceful way to abort here
-      } 
-   }
-   return 0;
+    /* all MSR access defaults to generating vmexit */
+    if (one_setting_allowed(MSR_IA32_VMX_PROCBASED_CTLS,
+                            CPU_BASED_ACTIVATE_MSR_BITMAP)) {
+
+        printf("<cgcvmx> before malloc msr_bitmap_region\n");
+        msr_bitmap_region = malloc(PAGE_SIZE, M_VMCS_MSR, M_WAITOK);
+        printf("<cgcvmx> after malloc msr_bitmap_region=%p\n", msr_bitmap_region);
+
+        /* M_WAITOK should never return NULL, but keep the guard anyway */
+        if (msr_bitmap_region == NULL) {
+            printf("<cgcvmx> ERROR: msr_bitmap_region is NULL\n");
+            return (ENXIO);
+        }
+
+        printf("<cgcvmx> before memset msr_bitmap_region\n");
+        memset(msr_bitmap_region, -1, PAGE_SIZE);
+        printf("<cgcvmx> after memset msr_bitmap_region\n");
+    } else {
+        printf("<cgcvmx> MSR bitmap not enabled by capability\n");
+    }
+
+    printf("<cgcvmx> before cgc_pmcmsr_config\n");
+    cgc_pmcmsr_config();
+    printf("<cgcvmx> after cgc_pmcmsr_config\n");
+
+    printf("<cgcvmx> before cgc_mcamsr_config\n");
+    cgc_mcamsr_config();
+    printf("<cgcvmx> after cgc_mcamsr_config\n");
+
+    printf("<cgcvmx> before cgc_miscmsr_config\n");
+    cgc_miscmsr_config();
+    printf("<cgcvmx> after cgc_miscmsr_config\n");
+
+    printf("<cgcvmx> before malloc threadVmx\n");
+    threadVmx = (VmxStruct**)malloc(sizeof(VmxStruct*) * MAXCPU,
+                                    M_VMXARRAY, M_ZERO | M_WAITOK);
+    printf("<cgcvmx> after malloc threadVmx=%p\n", threadVmx);
+
+    /* M_WAITOK should never return NULL, but keep the guard anyway */
+    if (threadVmx == NULL) {
+        printf("<cgcvmx> ERROR: threadVmx is NULL\n");
+        return (ENXIO);
+    }
+
+    printf("<cgcvmx> starting CPU_FOREACH loop\n");
+
+    /* use kthreads to setup VMCS for each core and vmlaunch */
+    CPU_FOREACH(procNum) {
+        int tres;
+        struct thread *kthread = NULL;
+
+        printf("<cgcvmx> virtualizing processor #%u\n", (uint32_t)procNum);
+
+        tres = kthread_add(virtualizeProc, (void *)(uintptr_t)procNum,
+                           NULL, &kthread,
+                           0, 0, "vmx.%u", (uint32_t)procNum);
+
+        if (tres != 0) {
+            printf("<cgcvmx> Failed to create vmx thread for CPU %u (err=%d)\n",
+                   (uint32_t)procNum, tres);
+            any_fail = 1;
+        }
+    }
+
+    if (any_fail) {
+        /* Not marking started; unload path should skip vmxoff */
+        printf("<cgcvmx> One or more CPU threads failed; refusing init\n");
+        return (ENXIO);
+    }
+
+    /* Only mark started once we're past all the init that must exist */
+    cgcvmx_started = 1;
+    printf("<cgcvmx> cgcvmx_on(): success; started=1\n");
+
+    return (0);
 }
 
-static int evtHandler(struct module *mod, int evt, void *arg) {
-   // Set return code to 0
-   int res = 0;
-   switch (evt) {
-      case MOD_LOAD:
-         res = cgcvmx_on();
-         break;
-      case MOD_UNLOAD:
-         cgcvmx_off();
-         break;
-      default:
-         res = EOPNOTSUPP;
-         break;
-   }
-   return (res);
+static int
+evtHandler(struct module *mod, int evt, void *arg)
+{
+    (void)mod;
+    (void)arg;
+
+    switch (evt) {
+    case MOD_LOAD:
+        if (hypervisor_present() && hypervisor_is_hyperv()) {
+            printf("cgcvmx: Hyper-V detected; refusing init to avoid GP fault\n");
+            return (ENXIO);
+        }
+        return (cgcvmx_on());
+
+    case MOD_UNLOAD:
+        if (!cgcvmx_started) {
+            printf("cgcvmx: unload called but module never started; skipping\n");
+            return (0);
+        }
+        cgcvmx_off();
+        return (0);
+
+    default:
+        return (EOPNOTSUPP);
+    }
 }
+
 
 static void
 set_msr_bitmap(uint32_t msr, int r, int w) {
