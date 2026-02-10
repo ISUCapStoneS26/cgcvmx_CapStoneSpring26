@@ -1121,10 +1121,10 @@ void vmexitCallback(VmxStruct *vmx) {
                      cgc_vmwrite(VMX_GUEST_CR0, val);
 //                     RegSetCr0(val);
                      break;
-                  case 3:
-                     cgc_vmwrite(VMX_GUEST_CR3, val);
-		     cgc_vmwrite(VMX_HOST_CR3, val);
-                     RegSetCr3(val);
+                  case 3:    //Curt 2/10/2026, If we get here, the CR3 load exiting bit set to 0 isn't working properly
+               //      cgc_vmwrite(VMX_GUEST_CR3, val);    //Curt 2/10/2026, to comment or not to comment this line out...
+		 //    cgc_vmwrite(VMX_HOST_CR3, val);
+             //        RegSetCr3(val);
                      break;
                   case 4:
                      cgc_vmwrite(VMX_GUEST_CR4, val);
