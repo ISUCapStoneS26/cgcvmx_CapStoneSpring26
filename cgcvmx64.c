@@ -2132,6 +2132,9 @@ int real_cgcvmx_on(uint64_t guestRip, uint64_t guestRsp, uint32_t procNum) {
    cgc_vmwrite(VMX_GUEST_RIP, guestRip);  //guest resume point
    //guest needs to appear to be returning from loading this module ???
 
+   //Curt 2/10/2026, Refresh host CR3 for this cpu right before entering the guest
+   cgc_vmwrite(VMX_HOST_CR3, RegGetCr3());
+	
    printf("<cgcvmx> VMX_GUEST_RSP set to %p\n", (void*)vm_read(VMX_GUEST_RSP));
    printf("<cgcvmx> VMX_GUEST_RIP set to %p\n", (void*)vm_read(VMX_GUEST_RIP));
    printf("<cgcvmx> hang on, about to launch\n");
