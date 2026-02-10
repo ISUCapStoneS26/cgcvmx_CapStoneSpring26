@@ -1706,7 +1706,8 @@ static void setup_guest_natural(uint64_t guestRsp) {
    Segment seg;
 
    cgc_vmwrite(VMX_GUEST_CR0, RegGetCr0());
-   cgc_vmwrite(VMX_GUEST_CR3, RegGetCr3());
+	//Curt 2/10/2026, removing this reference to CR3
+   // cgc_vmwrite(VMX_GUEST_CR3, RegGetCr3());
    cgc_vmwrite(VMX_GUEST_CR4, RegGetCr4());
    
    gdt_base = GetGdtBase();
